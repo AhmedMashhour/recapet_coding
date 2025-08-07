@@ -31,7 +31,6 @@ class UserService extends CrudService
                 'wallet_number' => $this->walletRepository->generateUniqueWalletNumber(),
                 'balance' => 0,
                 'status' => 'active',
-                'version' => 0
             ]);
 
 
