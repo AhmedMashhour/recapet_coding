@@ -1,6 +1,6 @@
 <?php
 
-namespace Database\Seeders;
+namespace Database\Factories;
 
 use App\Models\User;
 use App\Models\Wallet;
@@ -16,27 +16,6 @@ class WalletFactory extends Factory
             'balance' => fake()->randomFloat(2, 0, 10000),
             'status' => fake()->randomElement(['active', 'suspended', 'closed']),
         ];
-    }
-
-    public function active(): static
-    {
-        return $this->state(fn(array $attributes) => [
-            'status' => 'active',
-        ]);
-    }
-
-    public function suspended(): static
-    {
-        return $this->state(fn(array $attributes) => [
-            'status' => 'suspended',
-        ]);
-    }
-
-    public function withBalance(float $balance): static
-    {
-        return $this->state(fn(array $attributes) => [
-            'balance' => $balance,
-        ]);
     }
 
     protected function generateUniqueWalletNumber(): string

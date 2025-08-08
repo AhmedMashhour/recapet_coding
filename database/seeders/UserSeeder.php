@@ -58,7 +58,7 @@ class UserSeeder extends Seeder
 
         $this->command->info('Created ' . count($testUsers) . ' test users with wallets');
 
-        $randomUserCount = 50;
+        $randomUserCount = 50000;
         User::factory()
             ->count($randomUserCount)
             ->create()

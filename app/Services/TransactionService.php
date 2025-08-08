@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Exceptions\InsufficientBalanceException;
-use App\Repositories\TransactionRepository;
 use App\Repositories\WalletRepository;
 use App\Repositories\DepositRepository;
 use App\Repositories\WithdrawalRepository;
@@ -15,19 +14,19 @@ class TransactionService extends CrudService
 {
     use HasMoney;
 
-    protected TransactionRepository $transactionRepository;
     protected WalletRepository $walletRepository;
     protected DepositRepository $depositRepository;
     protected WithdrawalRepository $withdrawalRepository;
 
+    protected IdempotencyService $idempotencyService;
 
     public function __construct()
     {
         parent::__construct('Transaction');
-        $this->transactionRepository = new TransactionRepository();
         $this->walletRepository = new WalletRepository();
         $this->depositRepository = new DepositRepository();
         $this->withdrawalRepository = new WithdrawalRepository();
+        $this->idempotencyService = new IdempotencyService();
 
     }
 
@@ -37,11 +36,14 @@ class TransactionService extends CrudService
      */
     public function deposit(array $data)
     {
+        $this->idempotencyService->checkIdempotent($data['idempotency_key']);
 
         return DB::transaction(function () use ($data, &$transaction) {
-            $transaction = $this->transactionRepository->create([
+
+            $transaction = $this->repository->create([
                 'transaction_id' => Str::uuid()->toString(),
                 'type' => 'deposit',
+                'idempotency_key' => $data['idempotency_key'],
                 'amount' => $data['amount'],
                 'status' => 'processing',
                 'fee' => 0
@@ -70,14 +72,14 @@ class TransactionService extends CrudService
                     'payment_reference' => $data['payment_reference'] ?? null
                 ]);
 
-                $this->transactionRepository->update($transaction, [
+                $this->repository->update($transaction, [
                     'status' => 'completed',
                     'completed_at' => now(),
                 ]);
                 return $transaction->fresh()->load('deposit');
 
             } catch (\Exception $e) {
-                $this->transactionRepository->update($transaction, [
+                $this->repository->update($transaction, [
                     'status' => 'failed',
                 ]);
                 throw $e;
@@ -91,10 +93,13 @@ class TransactionService extends CrudService
      */
     public function withdraw(array $data)
     {
+        $this->idempotencyService->checkIdempotent($data['idempotency_key']);
+
         return DB::transaction(function () use ($data) {
-            $transaction = $this->transactionRepository->create([
+            $transaction = $this->repository->create([
                 'transaction_id' => Str::uuid()->toString(),
                 'type' => 'withdrawal',
+                'idempotency_key' => $data['idempotency_key'],
                 'amount' => $data['amount'],
                 'status' => 'pending',
                 'fee' => 0
@@ -129,7 +134,7 @@ class TransactionService extends CrudService
                     'withdrawal_reference' => $data['withdrawal_reference'] ?? null
                 ]);
 
-                $this->transactionRepository->update($transaction, [
+                $this->repository->update($transaction, [
                     'status' => 'completed',
                     'completed_at' => now(),
                 ]);
@@ -137,7 +142,7 @@ class TransactionService extends CrudService
                 return $transaction->fresh()->load('withdrawal');
 
             } catch (\Exception $e) {
-                $this->transactionRepository->update($transaction, [
+                $this->repository->update($transaction, [
                     'status' => 'failed',
                     'completed_at' => null,
                 ]);
@@ -149,11 +154,11 @@ class TransactionService extends CrudService
 
     public function getTransactionById(string $transactionId)
     {
-        return $this->transactionRepository->getByKey('transaction_id', $transactionId, ['deposit', 'withdrawal', 'transfer'])->first();
+        return $this->repository->getByKey('transaction_id', $transactionId, ['deposit', 'withdrawal', 'transfer'])->first();
     }
 
     public function getUserTransactions(int $userId, array $filters = [])
     {
-        return $this->transactionRepository->getUserTransactions($userId, $filters);
+        return $this->repository->getUserTransactions($userId, $filters);
     }
 }

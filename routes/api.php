@@ -35,13 +35,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::post('/transfer', [TransactionController::class, 'transfer'])
             ->name('transactions.transfer');
+
         Route::post('/calculate-fee', [TransactionController::class, 'calculateFee'])
             ->name('transactions.calculate-fee');
 
         Route::get('/show', [TransactionController::class, 'show'])
             ->name('transactions.show');
-
-
 
 
     });

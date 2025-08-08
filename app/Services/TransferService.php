@@ -19,6 +19,8 @@ class TransferService
     protected TransferRepository $transferRepository;
     protected WalletRepository $walletRepository;
     protected FeeCalculatorService $feeCalculator;
+    protected IdempotencyService $idempotencyService;
+
 
     public function __construct()
     {
@@ -26,13 +28,17 @@ class TransferService
         $this->transferRepository = new TransferRepository();
         $this->walletRepository = new WalletRepository();
         $this->feeCalculator = new FeeCalculatorService();
+        $this->idempotencyService = new IdempotencyService();
+
     }
 
     /**
      * @throws \Throwable
      */
-    public function executeTransfer(int $senderWalletId, string $receiverWalletNumber, float $amount)
+    public function executeTransfer(int $senderWalletId, string $receiverWalletNumber, float $amount , string $idempotency_key)
     {
+        $this->idempotencyService->checkIdempotent($idempotency_key);
+
         return DB::transaction(function () use ($senderWalletId, $receiverWalletNumber, $amount) {
             $transaction = $this->transactionRepository->create([
                 'transaction_id' => Str::uuid()->toString(),

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\DuplicateTransactionException;
 use App\Exceptions\InsufficientBalanceException;
 use App\Exceptions\WalletNotFoundException;
 use App\Http\Requests\DepositRequest;
@@ -40,6 +41,7 @@ class TransactionController extends Controller
         try {
             $validated = $request->validated();
             $validated['wallet_id'] = auth()->user()->wallet->id;
+            $validated['idempotency_key'] = $request->getIdempotencyKey();
 
 
             $transaction = $this->transactionService->deposit($validated);
@@ -51,7 +53,14 @@ class TransactionController extends Controller
                 'new_balance' => auth()->user()->wallet->fresh()->balance,
             ], 201);
 
-        } catch (\Exception $e) {
+        } catch (DuplicateTransactionException $e) {
+            return response()->json(new ErrorResource([
+                'error' => 'Duplicate transaction',
+                'code' => 'DUPLICATE_TRANSACTION',
+                'details' => 'This transaction has already been processed',
+            ]), 409);
+
+        }catch (\Exception $e) {
             return response()->json(new ErrorResource([
                 'error' => 'Deposit failed',
                 'details' => $e->getMessage(),
@@ -65,6 +74,7 @@ class TransactionController extends Controller
         try {
             $validated = $request->validated();
             $validated['wallet_id'] = auth()->user()->wallet->id;
+            $validated['idempotency_key'] = $request->getIdempotencyKey();
 
             $transaction = $this->transactionService->withdraw($validated);
 
@@ -75,6 +85,13 @@ class TransactionController extends Controller
                 'new_balance' => auth()->user()->wallet->fresh()->balance,
             ], 201);
 
+        }catch (DuplicateTransactionException $e) {
+            return response()->json(new ErrorResource([
+                'error' => 'Duplicate transaction',
+                'code' => 'DUPLICATE_TRANSACTION',
+                'details' => 'This transaction has already been processed',
+            ]), 409);
+
         } catch (InsufficientBalanceException $e) {
             return response()->json(new ErrorResource([
                 'error' => 'Insufficient balance',
@@ -82,7 +99,7 @@ class TransactionController extends Controller
                 'current_balance' => auth()->user()->wallet->balance,
             ]), 400);
 
-        } catch (\Exception $e) {
+        } catch (\Exception|\Throwable $e) {
             return response()->json(new ErrorResource([
                 'error' => 'Withdrawal failed',
                 'details' => $e->getMessage(),
@@ -101,7 +118,8 @@ class TransactionController extends Controller
             $transaction = $this->transferService->executeTransfer(
                 auth()->user()->wallet->id,
                 $validated['receiver_wallet_number'],
-                $validated['amount']
+                $validated['amount'],
+                $request->getIdempotencyKey(),
             );
 
             return response()->json([
@@ -127,7 +145,7 @@ class TransactionController extends Controller
                 'details' => $e->getMessage(),
             ]), 404);
 
-        } catch (\Exception $e) {
+        } catch (\Exception|\Throwable $e) {
             return response()->json(new ErrorResource([
                 'error' => 'Transfer failed',
                 'details' => $e->getMessage(),
