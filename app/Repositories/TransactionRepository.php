@@ -21,6 +21,10 @@ class TransactionRepository extends Repository
                     $sq->whereHas('wallet', function ($wq) use ($userId) {
                         $wq->where('user_id', $userId);
                     });
+                })->orWhereHas('withdrawal', function ($sq) use ($userId) {
+                    $sq->whereHas('wallet', function ($wq) use ($userId) {
+                        $wq->where('user_id', $userId);
+                    });
                 });
             });
 

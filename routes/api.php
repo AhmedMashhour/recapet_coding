@@ -29,6 +29,21 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('transactions')->group(function () {
         Route::post('/deposit', [TransactionController::class, 'deposit'])
             ->name('transactions.deposit');
+
+        Route::post('/withdraw', [TransactionController::class, 'withdraw'])
+            ->name('transactions.withdraw');
+
+        Route::post('/transfer', [TransactionController::class, 'transfer'])
+            ->name('transactions.transfer');
+        Route::post('/calculate-fee', [TransactionController::class, 'calculateFee'])
+            ->name('transactions.calculate-fee');
+
+        Route::get('/show', [TransactionController::class, 'show'])
+            ->name('transactions.show');
+
+
+
+
     });
 
 
