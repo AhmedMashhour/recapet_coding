@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\InsufficientBalanceException;
+use App\Models\LedgerEntry;
 use App\Repositories\WalletRepository;
 use App\Repositories\DepositRepository;
 use App\Repositories\WithdrawalRepository;
@@ -19,6 +20,7 @@ class TransactionService extends CrudService
     protected WithdrawalRepository $withdrawalRepository;
 
     protected IdempotencyService $idempotencyService;
+    protected LedgerService $ledgerService;
 
     public function __construct()
     {
@@ -27,6 +29,7 @@ class TransactionService extends CrudService
         $this->depositRepository = new DepositRepository();
         $this->withdrawalRepository = new WithdrawalRepository();
         $this->idempotencyService = new IdempotencyService();
+        $this->ledgerService = new LedgerService();
 
     }
 
@@ -64,13 +67,38 @@ class TransactionService extends CrudService
                     throw new \Exception("Failed to update balance");
                 }
 
-                $this->depositRepository->create([
+                $deposit = $this->depositRepository->create([
                     'transaction_id' => $transaction->transaction_id,
                     'wallet_id' => $wallet->id,
                     'amount' => $data['amount'],
                     'payment_method' => $data['payment_method'] ?? 'bank_transfer',
                     'payment_reference' => $data['payment_reference'] ?? null
                 ]);
+
+//                $lastEntry = $this->ledgerRepository->getByKey('wallet_id' ,$wallet->id)->orderBy('id', 'desc')->first();
+//
+//                $balanceBefore = $lastEntry ? $lastEntry->balance_after : 0;
+//
+//                $balanceAfter = $this->calculateWithPrecision('add', $balanceBefore, $data['amount']);
+//
+//                $this->ledgerRepository->create([
+//                    'transaction_id' => $deposit->transaction_id,
+//                    'wallet_id' => $wallet->id,
+//                    'type' => LedgerEntry::LEDGER_TYPE_CREDIT,
+//                    'amount' =>  $data['amount'],
+//                    'balance_before' => $balanceBefore,
+//                    'balance_after' => max(0, $balanceAfter),
+//                    'reference_type' => LedgerEntry::LEDGER_REFERANCE_TYPE_DEPOSIT,
+//                    'reference_id' => $deposit->id,
+//                    'description' => 'Deposit via ' . ($data['payment_method'] ?? 'bank_transfer'),
+//                ]);
+
+                $this->ledgerService->legerEntryLog(
+                    wallet: $wallet, amount: $data['amount'], type: LedgerEntry::LEDGER_TYPE_CREDIT,
+                    transactionId: $deposit->transaction_id, referenceType: LedgerEntry::LEDGER_REFERANCE_TYPE_DEPOSIT,
+                    referenceId: $deposit->id, description: 'Deposit via ' . ($data['payment_method'] ?? 'bank_transfer'),
+
+                );
 
                 $this->repository->update($transaction, [
                     'status' => 'completed',
@@ -126,7 +154,7 @@ class TransactionService extends CrudService
                     throw new \Exception("Failed to update balance");
                 }
 
-                $this->withdrawalRepository->create([
+                $withdrawal=  $this->withdrawalRepository->create([
                     'transaction_id' => $transaction->transaction_id,
                     'wallet_id' => $wallet->id,
                     'amount' => $data['amount'],
@@ -134,6 +162,30 @@ class TransactionService extends CrudService
                     'withdrawal_reference' => $data['withdrawal_reference'] ?? null
                 ]);
 
+//                $lastEntry = $this->ledgerRepository->getByKey('wallet_id' ,$wallet->id)->orderBy('id', 'desc')->first();
+//
+//                $balanceBefore = $lastEntry ? $lastEntry->balance_after : 0;
+//
+//                $balanceAfter = $this->calculateWithPrecision('subtract', $balanceBefore, $data['amount']);
+//
+//                $this->ledgerRepository->create([
+//                    'transaction_id' => $withdrawal->transaction_id,
+//                    'wallet_id' => $wallet->id,
+//                    'type' => LedgerEntry::LEDGER_TYPE_DEBIT,
+//                    'amount' =>  $data['amount'],
+//                    'balance_before' => $balanceBefore,
+//                    'balance_after' => max(0, $balanceAfter),
+//                    'reference_type' => LedgerEntry::LEDGER_REFERANCE_TYPE_WITHDRAWAL,
+//                    'reference_id' => $withdrawal->id,
+//                    'description' => 'Withdrawal via ' . ($data['withdrawal_method'] ?? 'bank_transfer'),
+//                ]);
+
+                $this->ledgerService->legerEntryLog(
+                    wallet: $wallet, amount: $data['amount'], type: LedgerEntry::LEDGER_TYPE_DEBIT,
+                    transactionId: $withdrawal->transaction_id, referenceType: LedgerEntry::LEDGER_REFERANCE_TYPE_WITHDRAWAL,
+                    referenceId: $withdrawal->id, description: 'Withdrawal via ' . ($data['withdrawal_method'] ?? 'bank_transfer'),
+
+                );
                 $this->repository->update($transaction, [
                     'status' => 'completed',
                     'completed_at' => now(),

@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\LedgerEntry;
+use App\Models\Wallet;
+use App\Repositories\LedgerEntryRepository;
 use App\Repositories\TransactionRepository;
 use App\Repositories\TransferRepository;
 use App\Repositories\WalletRepository;
@@ -20,6 +23,7 @@ class TransferService
     protected WalletRepository $walletRepository;
     protected FeeCalculatorService $feeCalculator;
     protected IdempotencyService $idempotencyService;
+    protected LedgerService $ledgerService;
 
 
     public function __construct()
@@ -29,6 +33,7 @@ class TransferService
         $this->walletRepository = new WalletRepository();
         $this->feeCalculator = new FeeCalculatorService();
         $this->idempotencyService = new IdempotencyService();
+        $this->ledgerService = new LedgerService();
 
     }
 
@@ -49,6 +54,7 @@ class TransferService
 
             try {
                 $receiverWallet = $this->walletRepository->getByKey('wallet_number', $receiverWalletNumber)->first();
+//                dd($receiverWallet);
                 if (!$receiverWallet) {
                     throw new WalletNotFoundException("Receiver wallet not found or inactive");
                 }
@@ -94,20 +100,39 @@ class TransferService
                     throw new \Exception("Failed to update receiver balance");
                 }
 
-                $this->transferRepository->create([
+                $transfer = $this->transferRepository->create([
                     'transaction_id' => $transaction->transaction_id,
                     'sender_wallet_id' => $senderWallet->id,
                     'receiver_wallet_id' => $receiverWallet->id,
                     'amount' => $amount,
                     'fee' => $fee
                 ]);
+                // sender ledger
+                $this->ledgerService->legerEntryLog(
+                    wallet: $senderWallet, amount: $amount, type: LedgerEntry::LEDGER_TYPE_DEBIT,
+                    transactionId: $transfer->transaction_id, referenceType: LedgerEntry::LEDGER_REFERANCE_TYPE_TRANSFER,
+                    referenceId: $transfer->id, description: "Transfer to wallet {$receiverWallet->wallet_number}",
+
+                );
+                //fee ledger
+
+                $this->ledgerService->legerEntryLog(
+                    wallet: $senderWallet, amount: $fee, type: LedgerEntry::LEDGER_TYPE_FEE,
+                    transactionId: $transfer->transaction_id, referenceType: LedgerEntry::LEDGER_REFERANCE_TYPE_TRANSFER,
+                    referenceId: $transfer->id, description: "Transfer fee",
+                );
+                //receiver ledger
+
+                $this->ledgerService->legerEntryLog(
+                    wallet: $receiverWallet, amount: $amount, type: LedgerEntry::LEDGER_TYPE_CREDIT,
+                    transactionId: $transfer->transaction_id, referenceType: LedgerEntry::LEDGER_REFERANCE_TYPE_TRANSFER,
+                    referenceId: $transfer->id, description: "Transfer from wallet {$senderWallet->wallet_number}",
+                );
 
                 $this->transactionRepository->update($transaction, [
                     'status' => 'completed',
                     'completed_at' => now()
                 ]);
-//                Log::info("sender wallet  " . json_encode(json_decode($senderWallet,true)));
-//                Log::info("receiverWallet  " . json_encode(json_decode($receiverWallet,true)));
 
                 return $transaction->fresh()->load('transfer.senderWallet', 'transfer.receiverWallet');
 
@@ -119,6 +144,8 @@ class TransferService
 
 
     }
+
+
 
 
 }
