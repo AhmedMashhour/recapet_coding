@@ -15,7 +15,8 @@ class LedgerService extends CrudService
     }
     public function legerEntryLog(Wallet $wallet, float $amount ,string $type , string $transactionId,string $referenceType , int $referenceId ,string $description = null)
     {
-        $lastEntry = $this->repository->getByKey('wallet_id' ,$wallet->id)->orderBy('id', 'desc')->first();
+        $lastEntry = $this->repository->getByKey('wallet_id' ,$wallet->id)
+            ->orderBy('id', 'desc')->lockForUpdate()->first();
 
         $balanceBefore = $lastEntry ? $lastEntry->balance_after : 0.0;
 

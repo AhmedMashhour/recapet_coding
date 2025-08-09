@@ -17,7 +17,7 @@ class FeeCalculatorService
     public function calculateTransferFee(float $amount): float
     {
         if ($amount <= self::TRANSFER_THRESHOLD) {
-            return 0.00;
+            return self::TRANSFER_BASE_FEE;
         }
 
         $percentageFee = $this->calculateWithPrecision(
@@ -38,14 +38,6 @@ class FeeCalculatorService
      */
     public function getFeeBreakdown(float $amount): array
     {
-        if ($amount <= self::TRANSFER_THRESHOLD) {
-            return [
-                'base_fee' => 0,
-                'percentage_fee' => 0,
-                'total_fee' => 0,
-                'fee_rate' => 0
-            ];
-        }
 
         $percentageFee = $this->calculateWithPrecision(
             'multiply',

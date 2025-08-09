@@ -12,6 +12,7 @@ use App\Models\Withdrawal;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class TransactionSeeder extends Seeder
@@ -43,7 +44,7 @@ class TransactionSeeder extends Seeder
 
             for ($i = 0; $i < $numDeposits; $i++) {
                 DB::transaction(function () use ($user) {
-                    $amount = fake()->randomFloat(2, 100, 2000);
+                    $amount = fake()->randomFloat(2, 1000, 2000);
 
                     $transaction = Transaction::query()->create([
                         'transaction_id' => Str::uuid(),
@@ -60,6 +61,10 @@ class TransactionSeeder extends Seeder
                         'amount' => $amount,
                         'payment_method' => fake()->randomElement(['bank_transfer', 'card', 'cash']),
                         'payment_reference' => fake()->uuid(),
+                    ]);
+
+                    $user->wallet->update([
+                        'balance' => $user->wallet->balance + $amount,
                     ]);
 
                     $this->createLedgerEntry(
@@ -89,6 +94,7 @@ class TransactionSeeder extends Seeder
 
         foreach ($users->take(20) as $user) {
             if ($user->wallet->balance < 200) {
+                Log::info('user balance less than 200 ::: user balance ' . json_encode(json_decode($user->wallet)));
                 continue;
             }
 
@@ -247,7 +253,7 @@ class TransactionSeeder extends Seeder
             ->orderBy('id', 'desc')
             ->first();
 
-        $balanceBefore = $lastEntry ? $lastEntry->balance_after : $wallet->balance;
+        $balanceBefore = $lastEntry ? $lastEntry->balance_after : 0.0;
 
         $balanceAfter = match($type) {
             'credit' => $balanceBefore + $amount,

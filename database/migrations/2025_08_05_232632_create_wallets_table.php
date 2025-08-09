@@ -16,7 +16,7 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('wallet_number', 20)->unique();
             $table->decimal('balance', 19, 2)->default(0.00);
-            $table->enum('status', ['active', 'suspended', 'closed'])->default('active');
+            $table->enum('status', ['active', 'suspended'])->default('active');
             $table->timestamps();
 
         });

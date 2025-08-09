@@ -24,8 +24,14 @@ class TransactionRepository extends Repository
                 })->orWhereHas('withdrawal', function ($sq) use ($userId) {
                     $sq->whereHas('wallet', function ($wq) use ($userId) {
                         $wq->where('user_id', $userId);
+                    })
+                    ;
+                })->orWhereHas('transfer.senderWallet', function ($wq) use ($userId) {
+                    $wq->where('user_id', $userId);
+                })
+                    ->orWhereHas('transfer.receiverWallet', function ($wq) use ($userId) {
+                        $wq->where('user_id', $userId);
                     });
-                });
             });
 
         if (!empty($filters['type'])) {

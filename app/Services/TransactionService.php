@@ -3,12 +3,15 @@
 namespace App\Services;
 
 use App\Exceptions\InsufficientBalanceException;
+use App\Exceptions\WalletLockedException;
 use App\Models\LedgerEntry;
 use App\Repositories\WalletRepository;
 use App\Repositories\DepositRepository;
 use App\Repositories\WithdrawalRepository;
 use App\Traits\HasMoney;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class TransactionService extends CrudService
@@ -21,6 +24,11 @@ class TransactionService extends CrudService
 
     protected IdempotencyService $idempotencyService;
     protected LedgerService $ledgerService;
+    const WALLET_LOCK_TIMEOUT = 30;
+    // Max retry attempts
+    const MAX_RETRY_ATTEMPTS = 3;
+    // Delay between retries in milliseconds
+    const RETRY_DELAY_MS = 500;
 
     public function __construct()
     {
@@ -40,32 +48,28 @@ class TransactionService extends CrudService
     public function deposit(array $data)
     {
         $this->idempotencyService->checkIdempotent($data['idempotency_key']);
-
-        return DB::transaction(function () use ($data, &$transaction) {
-
-            $transaction = $this->repository->create([
-                'transaction_id' => Str::uuid()->toString(),
-                'type' => 'deposit',
-                'idempotency_key' => $data['idempotency_key'],
-                'amount' => $data['amount'],
-                'status' => 'processing',
-                'fee' => 0
-            ]);
-
-            try {
-                $wallet = $this->walletRepository->getByIdAndLock($data['wallet_id']);
-                if (!$wallet || $wallet->status !== 'active') {
-                    throw new \Exception("Wallet not available");
-                }
-                $newBalance = $this->calculateWithPrecision('add', $wallet->balance, $data['amount']);
-
-                $affected = $this->walletRepository->update($wallet, [
-                    'balance' => $newBalance,
+        $transaction = $this->repository->create([
+            'transaction_id' => Str::uuid()->toString(),
+            'type' => 'deposit',
+            'idempotency_key' => $data['idempotency_key'],
+            'amount' => $data['amount'],
+            'status' => 'pending',
+            'fee' => 0
+        ]);
+        try {
+            return $this->executeWithWalletLock($data['wallet_id'], function($wallet) use ($data, &$transaction) {
+                $this->repository->update($transaction, [
+                    'status' => 'processing',
                 ]);
 
-                if (!$affected) {
-                    throw new \Exception("Failed to update balance");
+                if ($wallet->status !== 'active') {
+                    throw new \Exception("Wallet not available");
                 }
+
+                $newBalance = $this->calculateWithPrecision('add', $wallet->balance, $data['amount']);
+
+                $wallet->balance = $newBalance;
+                $wallet->save();
 
                 $deposit = $this->depositRepository->create([
                     'transaction_id' => $transaction->transaction_id,
@@ -75,24 +79,6 @@ class TransactionService extends CrudService
                     'payment_reference' => $data['payment_reference'] ?? null
                 ]);
 
-//                $lastEntry = $this->ledgerRepository->getByKey('wallet_id' ,$wallet->id)->orderBy('id', 'desc')->first();
-//
-//                $balanceBefore = $lastEntry ? $lastEntry->balance_after : 0;
-//
-//                $balanceAfter = $this->calculateWithPrecision('add', $balanceBefore, $data['amount']);
-//
-//                $this->ledgerRepository->create([
-//                    'transaction_id' => $deposit->transaction_id,
-//                    'wallet_id' => $wallet->id,
-//                    'type' => LedgerEntry::LEDGER_TYPE_CREDIT,
-//                    'amount' =>  $data['amount'],
-//                    'balance_before' => $balanceBefore,
-//                    'balance_after' => max(0, $balanceAfter),
-//                    'reference_type' => LedgerEntry::LEDGER_REFERANCE_TYPE_DEPOSIT,
-//                    'reference_id' => $deposit->id,
-//                    'description' => 'Deposit via ' . ($data['payment_method'] ?? 'bank_transfer'),
-//                ]);
-
                 $this->ledgerService->legerEntryLog(
                     wallet: $wallet, amount: $data['amount'], type: LedgerEntry::LEDGER_TYPE_CREDIT,
                     transactionId: $deposit->transaction_id, referenceType: LedgerEntry::LEDGER_REFERANCE_TYPE_DEPOSIT,
@@ -100,20 +86,22 @@ class TransactionService extends CrudService
 
                 );
 
+
+                // Mark transaction as completed
                 $this->repository->update($transaction, [
                     'status' => 'completed',
                     'completed_at' => now(),
                 ]);
+
                 return $transaction->fresh()->load('deposit');
+            });
 
-            } catch (\Exception $e) {
-                $this->repository->update($transaction, [
-                    'status' => 'failed',
-                ]);
-                throw $e;
-            }
-        });
-
+        } catch (\Exception $e) {
+            $this->repository->update($transaction, [
+                'status' => 'failed',
+            ]);
+            throw $e;
+        }
     }
 
     /**
@@ -122,21 +110,22 @@ class TransactionService extends CrudService
     public function withdraw(array $data)
     {
         $this->idempotencyService->checkIdempotent($data['idempotency_key']);
+        $transaction = $this->repository->create([
+            'transaction_id' => Str::uuid()->toString(),
+            'type' => 'withdrawal',
+            'idempotency_key' => $data['idempotency_key'],
+            'amount' => $data['amount'],
+            'status' => 'pending',
+            'fee' => 0
+        ]);
+        try {
 
-        return DB::transaction(function () use ($data) {
-            $transaction = $this->repository->create([
-                'transaction_id' => Str::uuid()->toString(),
-                'type' => 'withdrawal',
-                'idempotency_key' => $data['idempotency_key'],
-                'amount' => $data['amount'],
-                'status' => 'pending',
-                'fee' => 0
-            ]);
+            return $this->executeWithWalletLock($data['wallet_id'], function($wallet) use ($data, &$transaction) {
+                $this->repository->update($transaction, [
+                    'status' => 'processing',
+                ]);
 
-            try {
-                $wallet = $this->walletRepository->getByIdAndLock($data['wallet_id']);
-
-                if (!$wallet || $wallet->status !== 'active') {
+                if ($wallet->status !== 'active') {
                     throw new \Exception("Wallet not available");
                 }
 
@@ -146,15 +135,10 @@ class TransactionService extends CrudService
 
                 $newBalance = $this->calculateWithPrecision('subtract', $wallet->balance, $data['amount']);
 
-                $success = $this->walletRepository->update($wallet, [
-                    'balance' => $newBalance,
-                ]);
+                $wallet->balance = $newBalance;
+                $wallet->save();
 
-                if (!$success) {
-                    throw new \Exception("Failed to update balance");
-                }
-
-                $withdrawal=  $this->withdrawalRepository->create([
+                $withdrawal = $this->withdrawalRepository->create([
                     'transaction_id' => $transaction->transaction_id,
                     'wallet_id' => $wallet->id,
                     'amount' => $data['amount'],
@@ -162,47 +146,73 @@ class TransactionService extends CrudService
                     'withdrawal_reference' => $data['withdrawal_reference'] ?? null
                 ]);
 
-//                $lastEntry = $this->ledgerRepository->getByKey('wallet_id' ,$wallet->id)->orderBy('id', 'desc')->first();
-//
-//                $balanceBefore = $lastEntry ? $lastEntry->balance_after : 0;
-//
-//                $balanceAfter = $this->calculateWithPrecision('subtract', $balanceBefore, $data['amount']);
-//
-//                $this->ledgerRepository->create([
-//                    'transaction_id' => $withdrawal->transaction_id,
-//                    'wallet_id' => $wallet->id,
-//                    'type' => LedgerEntry::LEDGER_TYPE_DEBIT,
-//                    'amount' =>  $data['amount'],
-//                    'balance_before' => $balanceBefore,
-//                    'balance_after' => max(0, $balanceAfter),
-//                    'reference_type' => LedgerEntry::LEDGER_REFERANCE_TYPE_WITHDRAWAL,
-//                    'reference_id' => $withdrawal->id,
-//                    'description' => 'Withdrawal via ' . ($data['withdrawal_method'] ?? 'bank_transfer'),
-//                ]);
-
                 $this->ledgerService->legerEntryLog(
                     wallet: $wallet, amount: $data['amount'], type: LedgerEntry::LEDGER_TYPE_DEBIT,
                     transactionId: $withdrawal->transaction_id, referenceType: LedgerEntry::LEDGER_REFERANCE_TYPE_WITHDRAWAL,
                     referenceId: $withdrawal->id, description: 'Withdrawal via ' . ($data['withdrawal_method'] ?? 'bank_transfer'),
 
                 );
+
+                // Mark transaction as completed
                 $this->repository->update($transaction, [
                     'status' => 'completed',
                     'completed_at' => now(),
                 ]);
 
                 return $transaction->fresh()->load('withdrawal');
+            });
 
-            } catch (\Exception $e) {
-                $this->repository->update($transaction, [
-                    'status' => 'failed',
-                    'completed_at' => null,
-                ]);
-                throw $e;
-            }
-        });
+        } catch (\Exception $e) {
+            $this->repository->update($transaction, [
+                'status' => 'failed',
+                'completed_at' => null,
+            ]);
+            throw $e;
+        }
 
     }
+
+    /**
+     * @throws \Throwable
+     * @throws WalletLockedException
+     */
+    protected function executeWithWalletLock($walletId, callable $callback, $attempt = 1)
+    {
+        $lockKey = "wallet_lock:{$walletId}";
+        $lock = Cache::lock($lockKey, self::WALLET_LOCK_TIMEOUT);
+
+        try {
+            // Try to acquire lock
+            if ($lock->get()) {
+                // Lock acquired, execute the transaction
+                return DB::transaction(function () use ($walletId, $callback) {
+                    // Get fresh wallet data with row lock
+                    $wallet = $this->walletRepository->getByIdAndLock($walletId);
+
+                    if (!$wallet) {
+                        throw new \Exception("Wallet not found");
+                    }
+
+                    // Execute the callback with fresh wallet data
+                    return $callback($wallet);
+                });
+            } else {
+                // Lock not acquired
+                if ($attempt < self::MAX_RETRY_ATTEMPTS) {
+                    // Wait and retry
+                    usleep(self::RETRY_DELAY_MS * 1000);
+                    return $this->executeWithWalletLock($walletId, $callback, $attempt + 1);
+                } else {
+                    // Max retries reached
+                    throw new WalletLockedException("Wallet is currently processing another transaction. Please try again.");
+                }
+            }
+        } finally {
+            // Always release the lock
+            optional($lock)->release();
+        }
+    }
+
 
     public function getTransactionById(string $transactionId)
     {

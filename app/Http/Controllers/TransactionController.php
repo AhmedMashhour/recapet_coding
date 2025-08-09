@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\DuplicateTransactionException;
 use App\Exceptions\InsufficientBalanceException;
+use App\Exceptions\WalletLockedException;
 use App\Exceptions\WalletNotFoundException;
 use App\Http\Requests\DepositRequest;
 use App\Http\Requests\TransferRequest;
@@ -53,6 +54,12 @@ class TransactionController extends Controller
                 'new_balance' => auth()->user()->wallet->fresh()->balance,
             ], 201);
 
+        }catch (WalletLockedException $e) {
+            return response()->json(new ErrorResource([
+                'error' => 'Wallet temporarily locked',
+                'code' => 'WALLET_LOCKED',
+                'details' => 'Another transaction is in progress. Please try again in a moment.',
+            ]), 423);
         } catch (DuplicateTransactionException $e) {
             return response()->json(new ErrorResource([
                 'error' => 'Duplicate transaction',
@@ -92,7 +99,13 @@ class TransactionController extends Controller
                 'details' => 'This transaction has already been processed',
             ]), 409);
 
-        } catch (InsufficientBalanceException $e) {
+        } catch (WalletLockedException $e) {
+            return response()->json(new ErrorResource([
+                'error' => 'Wallet temporarily locked',
+                'code' => 'WALLET_LOCKED',
+                'details' => 'Another transaction is in progress. Please try again in a moment.',
+            ]), 423);
+        }catch (InsufficientBalanceException $e) {
             return response()->json(new ErrorResource([
                 'error' => 'Insufficient balance',
                 'code' => 'INSUFFICIENT_BALANCE',
@@ -130,6 +143,12 @@ class TransactionController extends Controller
                 'new_balance' => auth()->user()->wallet->fresh()->balance,
             ], 201);
 
+        }catch (WalletLockedException $e) {
+            return response()->json(new ErrorResource([
+                'error' => 'Wallet temporarily locked',
+                'code' => 'WALLET_LOCKED',
+                'details' => 'Another transaction is in progress. Please try again in a moment.',
+            ]), 423);
         } catch (InsufficientBalanceException $e) {
             return response()->json(new ErrorResource([
                 'error' => 'Insufficient balance',

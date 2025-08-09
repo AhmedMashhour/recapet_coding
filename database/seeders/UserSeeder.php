@@ -46,32 +46,27 @@ class UserSeeder extends Seeder
 
             $user->wallet()->create([
                 'wallet_number' => 'W-' . rand(10000000, 99999999),
-                'balance' => match ($index) {
-                    0 => 10000.00,
-                    1 => 5000.00,
-                    2 => 2500.00,
-                    3 => 100.00,
-                },
+                'balance' => 0.0,
                 'status' => 'active',
             ]);
         }
 
         $this->command->info('Created ' . count($testUsers) . ' test users with wallets');
 
-        $randomUserCount = 500;
+        $randomUserCount = 60;
         User::factory()
             ->count($randomUserCount)
             ->create()
             ->each(function ($user) {
                 $user->wallet->update([
-                    'balance' => fake()->randomFloat(2, 100, 5000),
+                    'balance' => 0.0,
                 ]);
             });
 
         $this->command->info('Created ' . $randomUserCount . ' random users with wallets');
 
         Wallet::query()->inRandomOrder()
-            ->limit(5)
+            ->limit(2)
             ->update(['status' => 'suspended']);
 
         $this->command->info('Suspended 5 random wallets');
