@@ -1,10 +1,9 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Services;
 
 use App\Exceptions\WalletNotFoundException;
 use App\Repositories\WalletRepository;
-use App\Services\CrudService;
 use App\Traits\HasMoney;
 
 class WalletService extends CrudService

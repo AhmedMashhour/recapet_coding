@@ -6,6 +6,7 @@ use App\Http\Resources\ErrorResource;
 use App\Http\Resources\TransactionResource;
 use App\Http\Resources\WalletResource;
 use App\Services\TransactionService;
+use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
