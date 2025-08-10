@@ -11,11 +11,11 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
-class TransfersRelationManager extends RelationManager
+class SentTransfersRelationManager extends RelationManager
 {
-    protected static string $relationship = 'transfers';
+    protected static string $relationship = 'sentTransfers';
 
-    protected static ?string $title = 'Transfers';
+    protected static ?string $title = 'Sent Transfers';
 
     protected static ?string $icon = 'heroicon-o-arrows-right-left';
 
@@ -94,10 +94,7 @@ class TransfersRelationManager extends RelationManager
                     ),
                 Tables\Columns\TextColumn::make('fee')
                     ->money('USD')
-                    ->sortable()
-                    ->visible(fn (Model $record): bool =>
-                        $record->sender_wallet_id === $this->ownerRecord->id && $record->fee > 0
-                    ),
+                    ->sortable(),
                 Tables\Columns\BadgeColumn::make('transaction.status')
                     ->label('Status')
                     ->colors([

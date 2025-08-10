@@ -61,7 +61,22 @@ class Wallet extends Model
     {
         return $this->hasMany(Transfer::class, 'receiver_wallet_id');
     }
-
+    public function transactions()
+    {
+        return Transaction::query()
+            ->where(function ($query) {
+                $query->whereHas('deposit', function ($q) {
+                    $q->where('wallet_id', $this->id);
+                })
+                    ->orWhereHas('withdrawal', function ($q) {
+                        $q->where('wallet_id', $this->id);
+                    })
+                    ->orWhereHas('transfer', function ($q) {
+                        $q->where('sender_wallet_id', $this->id)
+                            ->orWhere('receiver_wallet_id', $this->id);
+                    });
+            });
+    }
     public function ledgerEntries(): HasMany
     {
         return $this->hasMany(LedgerEntry::class);

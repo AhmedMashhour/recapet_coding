@@ -1,69 +1,45 @@
 <?php
 
-namespace App\Filament\Resources\WalletResource\RelationManagers;
+namespace App\Filament\Resources\WalletResource\Pages;
 
-use Filament\Forms;
-use Filament\Forms\Form;
-use Filament\Resources\RelationManagers\RelationManager;
+use App\Filament\Resources\WalletResource;
+use App\Filament\Resources\TransactionResource;
+use App\Models\Transaction;
+use App\Models\Wallet;
+use Filament\Resources\Pages\Concerns\InteractsWithRecord;
+use Filament\Resources\Pages\Page;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Concerns\InteractsWithTable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Filament\Forms;
+use Illuminate\Contracts\Support\Htmlable;
 
-class TransactionsRelationManager extends RelationManager
+class ViewWalletTransactions extends Page implements HasTable
 {
-    protected static string $relationship = 'transactions';
+    use InteractsWithTable;
+    use InteractsWithRecord;
 
-    protected static ?string $title = 'All Transactions';
+    protected static string $resource = WalletResource::class;
 
-    protected static ?string $icon = 'heroicon-o-banknotes';
+    protected static string $view = 'filament.pages.view-wallet-transactions';
 
-    public function form(Form $form): Form
+    public function mount(int | string $record): void
     {
-        return $form
-            ->schema([
-                Forms\Components\TextInput::make('transaction_id')
-                    ->required()
-                    ->maxLength(255),
-                Forms\Components\Select::make('type')
-                    ->options([
-                        'deposit' => 'Deposit',
-                        'withdrawal' => 'Withdrawal',
-                        'transfer' => 'Transfer',
-                    ])
-                    ->required(),
-                Forms\Components\Select::make('status')
-                    ->options([
-                        'pending' => 'Pending',
-                        'processing' => 'Processing',
-                        'completed' => 'Completed',
-                        'failed' => 'Failed',
-                    ])
-                    ->required(),
-                Forms\Components\TextInput::make('amount')
-                    ->numeric()
-                    ->prefix('$')
-                    ->required(),
-                Forms\Components\TextInput::make('fee')
-                    ->numeric()
-                    ->prefix('$'),
-            ]);
+        $this->record = $this->resolveRecord($record);
+    }
+
+    public function getTitle(): string | Htmlable
+    {
+        return "Transactions for Wallet: {$this->record->wallet_number}";
     }
 
     public function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(function (Builder $query) {
-                return $query->where(function ($q) {
-                    $q->whereHas('deposit', fn ($deposit) => $deposit->where('wallet_id', $this->ownerRecord->id))
-                        ->orWhereHas('withdrawal', fn ($withdrawal) => $withdrawal->where('wallet_id', $this->ownerRecord->id))
-                        ->orWhereHas('transfer', fn ($transfer) =>
-                        $transfer->where('sender_wallet_id', $this->ownerRecord->id)
-                            ->orWhere('receiver_wallet_id', $this->ownerRecord->id)
-                        );
-                });
-            })
+            ->query($this->getTableQuery())
             ->columns([
                 Tables\Columns\TextColumn::make('transaction_id')
                     ->searchable()
@@ -94,7 +70,7 @@ class TransactionsRelationManager extends RelationManager
                                 return -$record->amount;
                             case 'transfer':
                                 $transfer = $record->transfer;
-                                if ($transfer && $transfer->sender_wallet_id === $this->ownerRecord->id) {
+                                if ($transfer && $transfer->sender_wallet_id === $this->record->id) {
                                     return -$record->amount;
                                 } else {
                                     return $record->amount;
@@ -111,7 +87,7 @@ class TransactionsRelationManager extends RelationManager
                                 return 'danger';
                             case 'transfer':
                                 $transfer = $record->transfer;
-                                if ($transfer && $transfer->sender_wallet_id === $this->ownerRecord->id) {
+                                if ($transfer && $transfer->sender_wallet_id === $this->record->id) {
                                     return 'danger';
                                 } else {
                                     return 'success';
@@ -122,8 +98,7 @@ class TransactionsRelationManager extends RelationManager
                     }),
                 Tables\Columns\TextColumn::make('fee')
                     ->money('USD')
-                    ->sortable()
-                    ->visible(fn ($record) => $record->fee > 0),
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('details')
                     ->label('Details')
                     ->getStateUsing(function (Model $record): string {
@@ -135,7 +110,7 @@ class TransactionsRelationManager extends RelationManager
                             case 'transfer':
                                 $transfer = $record->transfer;
                                 if ($transfer) {
-                                    if ($transfer->sender_wallet_id === $this->ownerRecord->id) {
+                                    if ($transfer->sender_wallet_id === $this->record->id) {
                                         return 'To: ' . $transfer->receiverWallet->wallet_number;
                                     } else {
                                         return 'From: ' . $transfer->senderWallet->wallet_number;
@@ -146,6 +121,17 @@ class TransactionsRelationManager extends RelationManager
                                 return '';
                         }
                     }),
+                Tables\Columns\TextColumn::make('balance_impact')
+                    ->label('Balance After')
+                    ->getStateUsing(function (Model $record): ?string {
+                        $ledgerEntry = \App\Models\LedgerEntry::where('transaction_id', $record->transaction_id)
+                            ->where('wallet_id', $this->record->id)
+                            ->orderBy('id', 'desc')
+                            ->first();
+
+                        return $ledgerEntry ? '$' . number_format($ledgerEntry->balance_after, 2) : null;
+                    })
+                    ->weight('bold'),
                 Tables\Columns\TextColumn::make('completed_at')
                     ->dateTime()
                     ->sortable(),
@@ -185,11 +171,11 @@ class TransactionsRelationManager extends RelationManager
                             );
                     }),
             ])
-            ->headerActions([
-                // No create action
-            ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                Tables\Actions\ViewAction::make()
+                    ->url(fn (Transaction $record): string =>
+                    TransactionResource::getUrl('view', ['record' => $record])
+                    ),
             ])
             ->bulkActions([
                 // No bulk actions
@@ -199,26 +185,25 @@ class TransactionsRelationManager extends RelationManager
 
     protected function getTableQuery(): Builder
     {
-        return \App\Models\Transaction::query();
+        return Transaction::query()
+            ->with(['deposit', 'withdrawal', 'transfer.senderWallet', 'transfer.receiverWallet'])
+            ->where(function ($q) {
+                $q->whereHas('deposit', fn ($deposit) => $deposit->where('wallet_id', $this->record->id))
+                    ->orWhereHas('withdrawal', fn ($withdrawal) => $withdrawal->where('wallet_id', $this->record->id))
+                    ->orWhereHas('transfer', fn ($transfer) =>
+                    $transfer->where('sender_wallet_id', $this->record->id)
+                        ->orWhere('receiver_wallet_id', $this->record->id)
+                    );
+            });
     }
 
-    public function canCreate(): bool
+    protected function getHeaderActions(): array
     {
-        return false;
-    }
-
-    public function canEdit($record): bool
-    {
-        return false;
-    }
-
-    public function canDelete($record): bool
-    {
-        return false;
-    }
-
-    public function canDeleteAny(): bool
-    {
-        return false;
+        return [
+            \Filament\Actions\Action::make('back')
+                ->label('Back to Wallet')
+                ->url(WalletResource::getUrl('view', ['record' => $this->record]))
+                ->icon('heroicon-o-arrow-left'),
+        ];
     }
 }

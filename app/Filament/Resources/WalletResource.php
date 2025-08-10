@@ -138,10 +138,10 @@ class WalletResource extends Resource
     public static function getRelations(): array
     {
         return [
-            WalletResource\RelationManagers\TransactionsRelationManager::class,
             WalletResource\RelationManagers\DepositsRelationManager::class,
             WalletResource\RelationManagers\WithdrawalsRelationManager::class,
-            WalletResource\RelationManagers\TransfersRelationManager::class,
+            WalletResource\RelationManagers\ReceivedTransfersRelationManager::class,
+            WalletResource\RelationManagers\SentTransfersRelationManager::class,
             WalletResource\RelationManagers\LedgerEntriesRelationManager::class,
         ];
     }
@@ -151,6 +151,7 @@ class WalletResource extends Resource
         return [
             'index' => Pages\ListWallets::route('/'),
             'view' => Pages\ViewWallet::route('/{record}'),
+            'transactions' => Pages\ViewWalletTransactions::route('/{record}/transactions'),
         ];
     }
 

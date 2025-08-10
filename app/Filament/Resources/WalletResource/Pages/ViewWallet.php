@@ -13,7 +13,18 @@ class ViewWallet extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            // No edit or delete actions as requested
+            Actions\Action::make('viewTransactions')
+                ->label('View All Transactions')
+                ->icon('heroicon-o-banknotes')
+                ->url(fn () => WalletResource::getUrl('transactions', ['record' => $this->record]))
+                ->color('info'),
+        ];
+    }
+
+    protected function getHeaderWidgets(): array
+    {
+        return [
+            WalletResource\Widgets\WalletTransactionStats::class,
         ];
     }
 }
