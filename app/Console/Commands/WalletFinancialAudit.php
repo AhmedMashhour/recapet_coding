@@ -14,7 +14,6 @@ use App\Models\Transfer;
 class WalletFinancialAudit extends Command
 {
     protected $signature = 'wallet:audit
-                            {--fix : Attempt to fix minor discrepancies}
                             {--detailed : Show detailed breakdown of all issues}
                             {--wallet= : Audit specific wallet ID}
                             {--from= : Start date for audit (Y-m-d)}
@@ -101,9 +100,6 @@ class WalletFinancialAudit extends Command
 
                 $this->totalDiscrepancy += abs($wallet->balance - $lastLedger->balance_after);
 
-                if ($this->option('fix')) {
-                    $this->fixWalletBalance($wallet, $lastLedger->balance_after);
-                }
             }
         }
 
@@ -485,14 +481,6 @@ class WalletFinancialAudit extends Command
         }
     }
 
-    /**
-     * Fix wallet balance to match ledger
-     */
-    private function fixWalletBalance(Wallet $wallet, float $correctBalance)
-    {
-        $this->warn("  Fixing wallet {$wallet->id}: {$wallet->balance} -> {$correctBalance}");
-        $wallet->update(['balance' => $correctBalance]);
-    }
 
     /**
      * Display audit results

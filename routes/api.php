@@ -1,9 +1,14 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\HealthController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\WalletController;
 use Illuminate\Support\Facades\Route;
+
+Route::prefix('healthz')->group(function () {
+    Route::get('/', [HealthController::class, 'health'])->name('health.check');
+});
 
 // Authentication endpoints
 Route::prefix('auth')->group(function () {
