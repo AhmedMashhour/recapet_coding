@@ -10,11 +10,14 @@ use App\Models\LedgerEntry;
 use App\Models\Deposit;
 use App\Models\Withdrawal;
 use App\Models\Transfer;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class WalletFinancialAudit extends Command
 {
     protected $signature = 'wallet:audit
                             {--detailed : Show detailed breakdown of all issues}
+                            {--report-id : report id }
                             {--wallet= : Audit specific wallet ID}
                             {--from= : Start date for audit (Y-m-d)}
                             {--to= : End date for audit (Y-m-d)}';
@@ -29,6 +32,7 @@ class WalletFinancialAudit extends Command
     {
         $this->info('🔍 Starting Financial Audit...');
         $this->line('================================');
+        Log::info('start !!');
 
         $startTime = microtime(true);
 
@@ -47,10 +51,10 @@ class WalletFinancialAudit extends Command
 
         $duration = microtime(true) - $startTime;
         $this->info("\n✅ Audit completed in " . number_format($duration, 2) . " seconds");
+        Log::info('end !!');
 
         return count($this->errors) > 0 ? 1 : 0;
     }
-
     /**
      * Audit 1: Verify wallet balances match ledger entries
      */
@@ -527,7 +531,13 @@ class WalletFinancialAudit extends Command
         }
 
         // Save detailed report
-        $this->saveDetailedReport();
+        if (!$this->option('report-id') !== null){
+            $this->saveToDatabase($this->option('report-id'));
+
+        }else{
+            $this->saveDetailedReport();
+
+        }
     }
 
     /**
@@ -553,4 +563,27 @@ class WalletFinancialAudit extends Command
 
         $this->info("\n📄 Detailed report saved to: {$filename}");
     }
+
+    protected function saveToDatabase(string $reportId): void
+    {
+        \App\Models\AuditReport::create([
+            'report_id' => $reportId,
+            'audit_date' => now(),
+            'parameters' => [
+                'detailed' => $this->option('detailed'),
+                'wallet' => $this->option('wallet'),
+                'from' => $this->option('from'),
+                'to' => $this->option('to'),
+            ],
+            'summary' => [
+                'total_errors' => count($this->errors),
+                'total_warnings' => count($this->warnings),
+                'total_discrepancy' => $this->totalDiscrepancy,
+            ],
+            'errors' => $this->errors,
+            'warnings' => $this->warnings,
+            'status' => count($this->errors) > 0 ? 'has_issues' : 'clean',
+        ]);
+    }
+
 }
